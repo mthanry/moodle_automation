@@ -1,13 +1,24 @@
 # https://github.com/corvus-albus/corvus-albus-moodle-local_wsmanagesections-script-example
 
 import requests
+from bs4 import BeautifulSoup as bs
 from requests import post
+import re
+from datetime import datetime
+from dateutil.relativedelta import relativedelta
 
 # Constant for the Moodle api
 KEY      = '8cc87cf406775101c2df87b07b3a170d'
 URL      = 'https://034f8a1dcb5c.eu.ngrok.io'
 ENDPOINT ='/webservice/rest/server.php'
 courseid = 5
+
+VIDEO_REPOSITORY = 'https://drive.google.com/drive/folders/1pFHUrmpLv9gEJsvJYKxMdISuQuQsd_qX'
+
+
+################################################
+# Rest-Api functions and classes
+################################################
 
 def rest_api_parameters(in_args, prefix='', out_dict=None):
     """Transform dictionary/array structure to a flat dictionary, with key names
@@ -48,10 +59,6 @@ def call(fname, **kwargs):
         raise SystemError("Error calling Moodle API\n", response)
     return response
 
-################################################
-# Rest-Api classes
-################################################
-
 class LocalGetSections(object):
     """Get settings of sections. Requires courseid. Optional you can specify sections via number or id."""
     def __init__(self, cid, secnums = [], secids = []):
@@ -63,9 +70,60 @@ class LocalUpdateSections(object):
         self.updatesections = call('local_wsmanagesections_update_sections', courseid = cid, sections = sectionsdata)
 
 ################################################
-# Examples
+# Helper functions
 ################################################
 
+# Get list of google videos
+def get_gvideos(g_drive_folder, video_url_base = 'https://drive.google.com/file/d/', vid_tag_class = 'Q5txwe'):
+
+    req = requests.get(g_drive_folder)
+    soup = bs(req.text, 'html.parser')
+
+    videos = soup.find_all('div',class_ = vid_tag_class)
+    videos_details = []
+
+    for video in videos:
+        video_title = video.text
+        video_date = re.search(r'(\d{4}-\d{2}-\d{2})',video_title)
+        video_id = videos[0].parent.parent.parent.parent.attrs['data-id']   
+
+        video_detail = {
+            'video_id': video_id,
+            'video_url': video_url_base + video_id,
+            'video_title': video_title,
+            'video_date': datetime.strptime(video_date.group(), '%Y-%m-%d')
+        }
+    
+        videos_details.append(video_detail)
+        
+    return videos_details
+
+# Get date object based on day month closest from now
+def closest_date(day_month, format = '%d %B'):
+    '''
+        Assumes and returns a date based on how close it is from now
+
+        Parameters:
+            day: day of the month
+            month: name of the month
+            format: specify the format of the day and month. Default is %d %B (4 January)
+
+        Returns:
+            date: datetime object representing the closest day month
+        
+    '''
+    now = datetime.today()
+    curr_date = datetime.strptime(day_month + ' ' + str(now.year), format + ' %Y')
+    last_date = curr_date - relativedelta(years=1)
+    next_date = curr_date + relativedelta(years=1)
+    
+    return min([curr_date,last_date,next_date], key=lambda x: abs(x - now))
+
+
+
+################################################
+# Examples
+################################################
 
 # # Get all sections of the course.
 # sec = LocalGetSections(courseid)
@@ -103,7 +161,7 @@ class LocalUpdateSections(object):
 
 
 # Get all sections of the course.
-sec = LocalGetSections(courseid)
+sec = LocalGetSections(courseid,[10])
 # Get sections ids of the course with the given numbers.
 #sec = LocalGetSections(courseid, [0, 1, 2, 3, 5, 6])
 # Get sections ids of the course with the given ids.
@@ -112,3 +170,35 @@ sec = LocalGetSections(courseid)
 #sec = LocalGetSections(courseid, [0, 1, 2, 3, 5, 6], [7186, 7187, 7188, 7189])
 for section in sec.getsections:
     print(section['sectionnum'], section['name'])
+    print(section)
+
+
+
+
+
+
+
+# content = """
+# <ul class="section img-text">
+# <li class="activity label modtype_label ">
+# <h5>Class recording</h5>
+# <a class="aalink" onclick="" href="https://www.google.com">
+#                         <img src="https://034f8a1dcb5c.eu.ngrok.io/theme/image.php/boost/url/1613693725/icon" class="iconlarge activityicon" alt="" role="presentation" aria-hidden="true">
+#                         <span class="instancename">Google<span class="accesshide "> URL</span></span>
+#                     </a>
+# </li>
+# </ul>
+# """
+
+# data = [{   'section': 11, 
+#             'summary': content ,
+#             'summaryformat': 0
+#         }
+# ]
+
+# sec = LocalUpdateSections(courseid, data)
+
+
+
+
+print(get_gvideos(VIDEO_REPOSITORY))
