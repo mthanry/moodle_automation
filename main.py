@@ -1,5 +1,3 @@
-# https://github.com/corvus-albus/corvus-albus-moodle-local_wsmanagesections-script-example
-
 import requests
 from bs4 import BeautifulSoup as bs
 from requests import post
@@ -18,6 +16,7 @@ VIDEO_REPOSITORY = 'https://drive.google.com/drive/folders/1pFHUrmpLv9gEJsvJYKxM
 
 ################################################
 # Rest-Api functions and classes
+# https://github.com/corvus-albus/corvus-albus-moodle-local_wsmanagesections-script-example
 ################################################
 
 def rest_api_parameters(in_args, prefix='', out_dict=None):
@@ -81,22 +80,32 @@ def get_gvideos(g_drive_folder, video_url_base = 'https://drive.google.com/file/
 
     videos = soup.find_all('div',class_ = vid_tag_class)
     videos_details = []
-
+    
     for video in videos:
         video_title = video.text
         video_date = re.search(r'(\d{4}-\d{2}-\d{2})',video_title)
-        video_id = videos[0].parent.parent.parent.parent.attrs['data-id']   
+        video_id = video.parent.parent.parent.parent.attrs['data-id']   
 
         video_detail = {
-            'video_id': video_id,
-            'video_url': video_url_base + video_id,
-            'video_title': video_title,
-            'video_date': datetime.strptime(video_date.group(), '%Y-%m-%d')
+            'id': video_id,
+            'url': video_url_base + video_id,
+            'title': video_title,
+            'date': datetime.strptime(video_date.group(), '%Y-%m-%d')
         }
     
         videos_details.append(video_detail)
         
     return videos_details
+
+def missing_gvideo(video, section):
+    if video['date'] > section['start'] and video['date'] <= section['end']:
+        #the dates match. Is the video id found in section summary?
+        summary = bs(section['summary'], 'html.parser')
+        if summary.find(string=video['title']):
+            return False
+        else:
+            return True
+    return False
 
 # Get date object based on day month closest from now
 def closest_date(day_month, format = '%d %B'):
@@ -118,6 +127,72 @@ def closest_date(day_month, format = '%d %B'):
     next_date = curr_date + relativedelta(years=1)
     
     return min([curr_date,last_date,next_date], key=lambda x: abs(x - now))
+
+
+
+
+all_gvideos = get_gvideos(VIDEO_REPOSITORY)
+
+
+
+# Get all sections details as an iterable
+sec = LocalGetSections(courseid)
+all_sections = []
+
+for section in sec.getsections:
+    dates = re.findall(r'(\d{1,2} \w{3,})',section['name'])
+    
+    if len(dates) == 2:
+        start   = closest_date(dates[0])
+        end     = closest_date(dates[1])
+    else:
+        start   = None
+        end     = None
+
+    section_details = {
+        'num'   : section['sectionnum'],
+        'start'         : start,
+        'end'           : end,
+        'name'  :section['name'],
+        'summary': section['summary']
+    }
+
+    all_sections.append(section_details)
+
+
+updates = []
+
+for section in all_sections:
+    
+    # Are there google videos for the sections?
+    if section['start'] == None or section['end'] == None:
+        continue
+    else:
+        missing_gvideos = list(filter(lambda gvideo: missing_gvideo(gvideo, section), all_gvideos))
+        
+        # Amend summaries with unpublished videos
+        for missing_video in missing_gvideos:
+            summary = bs(section['summary'], 'html.parser')
+            new_link = summary.new_tag('a', href=missing_video['url'])
+            new_link.string = missing_video['title']
+
+            section['summary'] += '<p>' + str(new_link) + '</p>'
+
+
+        # Add the modified summaries to pending updates
+        updates.append(
+            {
+                'section': section['num'],
+                'summary': section['summary']
+            }
+        )
+        
+data = [{
+    'section': 1,
+    'summary': ''
+}] 
+sec = LocalUpdateSections(courseid, updates)
+print(sec.updatesections)
 
 
 
@@ -159,46 +234,10 @@ def closest_date(day_month, format = '%d %B'):
 # print(sec.updatesections)
 
 
-
-# Get all sections of the course.
-sec = LocalGetSections(courseid,[10])
 # Get sections ids of the course with the given numbers.
 #sec = LocalGetSections(courseid, [0, 1, 2, 3, 5, 6])
 # Get sections ids of the course with the given ids.
 #sec = LocalGetSections(courseid, [], [7186, 7187, 7188, 7189])
 # Get sections ids of the course with the given numbers and given ids.
 #sec = LocalGetSections(courseid, [0, 1, 2, 3, 5, 6], [7186, 7187, 7188, 7189])
-for section in sec.getsections:
-    print(section['sectionnum'], section['name'])
-    print(section)
 
-
-
-
-
-
-
-# content = """
-# <ul class="section img-text">
-# <li class="activity label modtype_label ">
-# <h5>Class recording</h5>
-# <a class="aalink" onclick="" href="https://www.google.com">
-#                         <img src="https://034f8a1dcb5c.eu.ngrok.io/theme/image.php/boost/url/1613693725/icon" class="iconlarge activityicon" alt="" role="presentation" aria-hidden="true">
-#                         <span class="instancename">Google<span class="accesshide "> URL</span></span>
-#                     </a>
-# </li>
-# </ul>
-# """
-
-# data = [{   'section': 11, 
-#             'summary': content ,
-#             'summaryformat': 0
-#         }
-# ]
-
-# sec = LocalUpdateSections(courseid, data)
-
-
-
-
-print(get_gvideos(VIDEO_REPOSITORY))
