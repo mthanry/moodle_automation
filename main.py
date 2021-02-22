@@ -191,8 +191,42 @@ data = [{
     'section': 1,
     'summary': ''
 }] 
-sec = LocalUpdateSections(courseid, updates)
+sec = LocalUpdateSections(courseid, data)
 print(sec.updatesections)
+
+
+
+
+
+
+
+
+
+
+
+
+class Moodle_section():
+    def __init__(self, section):
+        self.num        = section['num']
+        self.name       = section['name']
+        self.summary    = section['summary']
+
+        dates = re.findall(r'(\d{1,2} \w{3,})',self.name)
+    
+        if len(dates) == 2:
+            self.start  = closest_date(dates[0])
+            self.end    = closest_date(dates[1])
+        else:
+            self.start  = None
+            self.end    = None
+
+        self.published_links = []
+        self.new_links = []
+
+
+
+
+
 
 
 
