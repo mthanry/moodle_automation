@@ -4,6 +4,7 @@ from requests import post
 import re
 from datetime import datetime
 from dateutil.relativedelta import relativedelta
+import os
 
 # Constants
 KEY      = '8cc87cf406775101c2df87b07b3a170d'
@@ -16,8 +17,6 @@ VIDEO_REPOSITORY = 'https://drive.google.com/drive/folders/1pFHUrmpLv9gEJsvJYKxM
 
 
 class Moodle_section():
-    
-
     def __init__(self, section, vid_catalogue):
         self.num        = section['sectionnum']
         self.name       = section['name']
@@ -29,11 +28,15 @@ class Moodle_section():
         self.avail_vids     = []
         self.new_vids       = []
 
+        #Presentations
+        self.avail_pres     = []
+        self.new_pres       = []
+
         #Populate week start and end based on name
         dates = re.findall(r'(\d{1,2} \w{3,})',self.name)
         if len(dates) == 2:
-            self.start  = closest_date(dates[0])
-            self.end    = closest_date(dates[1])
+            self.start  = self.closest_date(dates[0])
+            self.end    = self.closest_date(dates[1])
             # Retrieve section specific videos from the repository
             self.get_all_videos()
         else:
@@ -41,12 +44,42 @@ class Moodle_section():
             self.end    = None
 
         self.get_missing_videos()
+        self.get_presentations()
+
 
     def get_all_videos(self):
         # Retrieve section specific videos from the repository
         for video in self.vid_cat:
             if self.start < video['date'] <= self.end:
                 self.avail_vids.append(video)
+
+
+
+    
+
+    def get_presentations(self):
+        # /ooapp/wk1/wk1.pdf
+        # /ooapp2/wk2/index.html
+        # /ooapp2/wk2s/index.html
+        if self.num < 15:
+            term = ''
+        else:
+            term = '2'
+        try:
+            f = open('ooapp' + term + '/wk' + str(self.num) + '/slides.md', encoding = 'utf-8')
+            # soup = bs(f.read(), 'html.parser')
+            # f.readlines()[1]
+            title = re.match('##\s(.*)',f.readlines()[1])
+            self.avail_pres.append({
+                'title': title.group(1),
+                'path': 'https://mikhail-cct.github.io'/'ooapp' + term + '/wk' + str(self.num) + '/index.html'
+            })
+        except:
+            pass
+        
+           
+
+
 
     def get_missing_videos(self):
         summary = bs(self.summary, 'html.parser')
@@ -56,6 +89,28 @@ class Moodle_section():
             if not(summary.find(string=video['title'])):
                 self.new_vids.append(video)
 
+
+
+    def closest_date(self, day_month, format = '%d %B'):
+        # Get date object based on day month closest from now
+        '''
+            Assumes and returns a date based on how close it is from now
+
+            Parameters:
+                day: day of the month
+                month: name of the month
+                format: specify the format of the day and month. Default is %d %B (4 January)
+
+            Returns:
+                date: datetime object representing the closest day month
+            
+        '''
+        now = datetime.today()
+        curr_date = datetime.strptime(day_month + ' ' + str(now.year), format + ' %Y')
+        last_date = curr_date - relativedelta(years=1)
+        next_date = curr_date + relativedelta(years=1)
+        
+        return min([curr_date,last_date,next_date], key=lambda x: abs(x - now))
 
 
 
@@ -84,36 +139,7 @@ def get_gvideos(g_drive_folder, video_url_base = 'https://drive.google.com/file/
         
     return videos_details
 
-def ex_missing_gvideo(video, section):
-    if video['date'] > section['start'] and video['date'] <= section['end']:
-        #the dates match. Is the video id found in section summary?
-        summary = bs(section['summary'], 'html.parser')
-        if summary.find(string=video['title']):
-            return False
-        else:
-            return True
-    return False
 
-# Get date object based on day month closest from now
-def closest_date(day_month, format = '%d %B'):
-    '''
-        Assumes and returns a date based on how close it is from now
-
-        Parameters:
-            day: day of the month
-            month: name of the month
-            format: specify the format of the day and month. Default is %d %B (4 January)
-
-        Returns:
-            date: datetime object representing the closest day month
-        
-    '''
-    now = datetime.today()
-    curr_date = datetime.strptime(day_month + ' ' + str(now.year), format + ' %Y')
-    last_date = curr_date - relativedelta(years=1)
-    next_date = curr_date + relativedelta(years=1)
-    
-    return min([curr_date,last_date,next_date], key=lambda x: abs(x - now))
 
 ################################################
 # Rest-Api functions and classes
@@ -182,4 +208,16 @@ for section in LocalGetSections(COURSEID).getsections:
     sections.append(Moodle_section(section, all_gvideos))
 
 
-print(sections[4].new_vids)
+print()
+
+
+
+# for folder , sub_folders , files in os.walk('./'):
+#     if re.match('\./[^\.]',folder):
+#         for sub_fold in sub_folders:
+#             for item in os.listdir(folder+'/'+sub_fold):
+#                 print(folder+'/'+sub_fold+'/'+item) 
+
+
+
+
