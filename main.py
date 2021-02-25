@@ -269,7 +269,9 @@ class Moodle_section():
 
 
 # Get sections ids of the course with the given numbers.
-#sec = LocalGetSections(courseid, [0, 1, 2, 3, 5, 6])
+sec = LocalGetSections(courseid, [0, 1, 2, 3, 5, 6])
+
+
 # Get sections ids of the course with the given ids.
 #sec = LocalGetSections(courseid, [], [7186, 7187, 7188, 7189])
 # Get sections ids of the course with the given numbers and given ids.

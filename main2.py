@@ -22,74 +22,89 @@ class Moodle_section():
         self.name       = section['name']
         self.summary    = section['summary']
         self.changelog  = {}
-
-        #Videos
+        self.new_links  = []
         self.vid_cat        = vid_catalogue
-        self.avail_vids     = []
-        self.new_vids       = []
-
-        #Presentations
-        self.avail_pres     = []
-        self.new_pres       = []
-
+ 
         #Populate week start and end based on name
         dates = re.findall(r'(\d{1,2} \w{3,})',self.name)
         if len(dates) == 2:
             self.start  = self.closest_date(dates[0])
             self.end    = self.closest_date(dates[1])
             # Retrieve section specific videos from the repository
-            self.get_all_videos()
+            self.get_videos()
         else:
             self.start  = None
             self.end    = None
 
-        self.get_missing_videos()
+        # Retrieve section specific HTML and PDF slides from the repository
         self.get_presentations()
 
+        # Build the new summary
+        self.make_new_summary()
 
-    def get_all_videos(self):
+    def get_videos(self):
         # Retrieve section specific videos from the repository
+        summary = bs(self.summary, 'html.parser')
         for video in self.vid_cat:
-            if self.start < video['date'] <= self.end:
-                self.avail_vids.append(video)
-
-
-
-    
-
+            if  (self.start < video['date'] <= self.end) and \
+                (summary.find(href = video['url']) == None):
+                # checks if present in the summary
+                self.new_links.append({
+                    'type'  : 'video',
+                    'title' : video['title'],
+                    'url'  : video['url']
+                })
+                
     def get_presentations(self):
-        # /ooapp/wk1/wk1.pdf
-        # /ooapp2/wk2/index.html
-        # /ooapp2/wk2s/index.html
+        # Logic handling of semester will go here
         if self.num < 15:
             term = ''
         else:
             term = '2'
+
+        # HTML slides
         try:
-            f = open('ooapp' + term + '/wk' + str(self.num) + '/slides.md', encoding = 'utf-8')
-            # soup = bs(f.read(), 'html.parser')
-            # f.readlines()[1]
+            #  Get topic title from slides.md
+            f = open(f'ooapp{term}/wk{str(self.num)}/slides.md', encoding = 'utf-8')
             title = re.match('##\s(.*)',f.readlines()[1])
-            self.avail_pres.append({
-                'title': title.group(1),
-                'path': 'https://mikhail-cct.github.io'/'ooapp' + term + '/wk' + str(self.num) + '/index.html'
+            self.new_links.append({
+                'type'  : 'powerpoint',
+                'title' : title.group(1),
+                'url'  : f'https://mikhail-cct.github.io/ooapp{term}/wk{str(self.num)}/index.html'
             })
         except:
             pass
-        
-           
 
+        # PDF slides
+        try:
+            #  Get topic title from slides.md
+            f = open(f'ooapp{term}/wk{str(self.num)}/wk{str(self.num)}.pdf', encoding = 'utf-8')
+            self.new_links.append({
+                'type'  : 'pdf',
+                'title': title.group(1),
+                'url': f'https://mikhail-cct.github.io/ooapp{term}/wk{str(self.num)}/wk{str(self.num)}.pdf'
+            })
+        except:
+            pass
 
+        # Same to be applied for Sat classes
 
-    def get_missing_videos(self):
-        summary = bs(self.summary, 'html.parser')
-        for video in self.avail_vids:
-            # If the title of the video is not found in the section
-            # then then video is considered missing 
-            if not(summary.find(string=video['title'])):
-                self.new_vids.append(video)
+    def make_new_summary(self):
+        for resource in self.new_links:
+            soup = bs('<p></p>', 'html.parser')
+            root_tag = soup.p
 
+            # Build the link
+            new_res_link = soup.new_tag("a", href=resource['url'])
+            new_res_link.string = resource['title']
 
+            # Add icon (based on moodle image.php)
+            img = soup.new_tag('img',src=f'/theme/image.php/classic/core/-1/f/{resource["type"]}-24')
+            new_res_link.string.insert_before(img)
+
+            root_tag.append(new_res_link)
+
+            self.summary += str(root_tag) + '\n'
 
     def closest_date(self, day_month, format = '%d %B'):
         # Get date object based on day month closest from now
@@ -197,8 +212,6 @@ class LocalUpdateSections(object):
 
 
 
-
-
 #Get video repository
 all_gvideos = get_gvideos(VIDEO_REPOSITORY)
 
@@ -208,16 +221,9 @@ for section in LocalGetSections(COURSEID).getsections:
     sections.append(Moodle_section(section, all_gvideos))
 
 
-print()
 
 
-
-# for folder , sub_folders , files in os.walk('./'):
-#     if re.match('\./[^\.]',folder):
-#         for sub_fold in sub_folders:
-#             for item in os.listdir(folder+'/'+sub_fold):
-#                 print(folder+'/'+sub_fold+'/'+item) 
-
+print(sections[2].summary)
 
 
 
