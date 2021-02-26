@@ -187,12 +187,20 @@ for section in all_sections:
             }
         )
         
-data = [{
-    'section': 1,
+# data = [{
+#     'section': 5,
+#     'summary': ''
+# }] 
+# sec = LocalUpdateSections(courseid, data)
+# print(sec.updatesections)
+
+for s in range(26):
+    data = [{
+    'section': s,
     'summary': ''
-}] 
-sec = LocalUpdateSections(courseid, data)
-print(sec.updatesections)
+    }] 
+    sec = LocalUpdateSections(courseid, data)
+    print(sec.updatesections)
 
 
 
@@ -202,26 +210,6 @@ print(sec.updatesections)
 
 
 
-
-
-
-class Moodle_section():
-    def __init__(self, section):
-        self.num        = section['num']
-        self.name       = section['name']
-        self.summary    = section['summary']
-
-        dates = re.findall(r'(\d{1,2} \w{3,})',self.name)
-    
-        if len(dates) == 2:
-            self.start  = closest_date(dates[0])
-            self.end    = closest_date(dates[1])
-        else:
-            self.start  = None
-            self.end    = None
-
-        self.published_links = []
-        self.new_links = []
 
 
 
@@ -269,7 +257,7 @@ class Moodle_section():
 
 
 # Get sections ids of the course with the given numbers.
-sec = LocalGetSections(courseid, [0, 1, 2, 3, 5, 6])
+# sec = LocalGetSections(courseid, [0, 1, 2, 3, 5, 6])
 
 
 # Get sections ids of the course with the given ids.

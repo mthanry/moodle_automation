@@ -17,14 +17,17 @@ VIDEO_REPOSITORY = 'https://drive.google.com/drive/folders/1pFHUrmpLv9gEJsvJYKxM
 
 
 class Moodle_section():
+    material_repository = 'https://mikhail-cct.github.io'
+    
     def __init__(self, section, vid_catalogue):
+
         self.num        = section['sectionnum']
         self.name       = section['name']
         self.summary    = section['summary']
         self.changelog  = {}
         self.new_links  = []
-        self.vid_cat        = vid_catalogue
- 
+        self.vid_cat    = vid_catalogue
+        
         #Populate week start and end based on name
         dates = re.findall(r'(\d{1,2} \w{3,})',self.name)
         if len(dates) == 2:
@@ -35,7 +38,7 @@ class Moodle_section():
         else:
             self.start  = None
             self.end    = None
-
+        
         # Retrieve section specific HTML and PDF slides from the repository
         self.get_presentations()
 
@@ -56,36 +59,68 @@ class Moodle_section():
                 })
                 
     def get_presentations(self):
-        # Logic handling of semester will go here
-        if self.num < 15:
-            term = ''
-        else:
-            term = '2'
+        for folder , sub_folders , files in os.walk('./'):
+            sub_folders.sort()
+            
+            if re.match('\./[^\.]',folder): # ignore hidden files
+                
+                for sub_fold in sub_folders:
+                    if re.match(f'.*{str(self.num)}.*',sub_fold): # only for this section
 
-        # HTML slides
-        try:
-            #  Get topic title from slides.md
-            f = open(f'ooapp{term}/wk{str(self.num)}/slides.md', encoding = 'utf-8')
-            title = re.match('##\s(.*)',f.readlines()[1])
-            self.new_links.append({
-                'type'  : 'powerpoint',
-                'title' : title.group(1),
-                'url'  : f'https://mikhail-cct.github.io/ooapp{term}/wk{str(self.num)}/index.html'
-            })
-        except:
-            pass
+                        for item in os.listdir(folder+'/'+sub_fold): # process files
+                            file_path = folder+'/'+sub_fold+'/'+item
 
-        # PDF slides
-        try:
-            #  Get topic title from slides.md
-            f = open(f'ooapp{term}/wk{str(self.num)}/wk{str(self.num)}.pdf', encoding = 'utf-8')
-            self.new_links.append({
-                'type'  : 'pdf',
-                'title': title.group(1),
-                'url': f'https://mikhail-cct.github.io/ooapp{term}/wk{str(self.num)}/wk{str(self.num)}.pdf'
-            })
-        except:
-            pass
+                            #exclude .md files
+                            if re.match('.*[^\.md]$',item):
+                                if item == 'index.html' or re.match(f'wk{str(self.num)}\.pdf',item):
+                                    
+                                    # Attempt to find the class topic
+                                    try:
+                                        f = open(f'{folder}/wk{str(self.num)}/slides.md', encoding = 'utf-8')
+                                        scraped_title = re.match('##\s(.*)',f.readlines()[1])
+                                        title = scraped_title.group(1)
+                                        print(title)
+                                    except:
+                                        title = item
+
+                                    # Add the new resource to the list
+                                    self.new_links.append({
+                                        'type'  : 'icon' if item == 'index.html' else 'pdf',
+                                        'title' : title,
+                                        'url'  : f'{self.material_repository}/wk{str(self.num)}/{item}'
+                                    })
+
+                                else:
+                                    # Add the new resource to the list
+                                    self.new_links.append({
+                                        'type'  : 'icon',
+                                        'title' : item,
+                                        'url'  : f'{self.material_repository}/wk{str(self.num)}/{item}'
+                                    })
+        # # HTML slides
+        # try:
+        #     #  Get topic title from slides.md
+        #     f = open(f'ooapp{term}/wk{str(self.num)}/slides.md', encoding = 'utf-8')
+        #     title = re.match('##\s(.*)',f.readlines()[1])
+        #     self.new_links.append({
+        #         'type'  : 'powerpoint',
+        #         'title' : title.group(1),
+        #         'url'  : f'https://mikhail-cct.github.io/ooapp{term}/wk{str(self.num)}/index.html'
+        #     })
+        # except:
+        #     pass
+
+        # # PDF slides
+        # try:
+        #     #  Get topic title from slides.md
+        #     f = open(f'ooapp{term}/wk{str(self.num)}/wk{str(self.num)}.pdf', encoding = 'utf-8')
+        #     self.new_links.append({
+        #         'type'  : 'pdf',
+        #         'title': title.group(1),
+        #         'url': f'https://mikhail-cct.github.io/ooapp{term}/wk{str(self.num)}/wk{str(self.num)}.pdf'
+        #     })
+        # except:
+        #     pass
 
         # Same to be applied for Sat classes
 
@@ -223,7 +258,13 @@ for section in LocalGetSections(COURSEID).getsections:
 
 
 
-print(sections[2].summary)
+
+
+for section in sections:
+    print(section.num)
+    print(section.summary)
+
+
 
 
 
