@@ -4,21 +4,174 @@ from requests import post
 import re
 from datetime import datetime
 from dateutil.relativedelta import relativedelta
+import os
 
-# Constant for the Moodle api
+# Constants
 KEY      = '8cc87cf406775101c2df87b07b3a170d'
 URL      = 'https://034f8a1dcb5c.eu.ngrok.io'
 ENDPOINT ='/webservice/rest/server.php'
-courseid = 5
-
+COURSEID = 5
 VIDEO_REPOSITORY = 'https://drive.google.com/drive/folders/1pFHUrmpLv9gEJsvJYKxMdISuQuQsd_qX'
 
 
-################################################
-# Rest-Api functions and classes
-# https://github.com/corvus-albus/corvus-albus-moodle-local_wsmanagesections-script-example
-################################################
 
+
+class Moodle_section():
+    material_repository = 'https://github.com/mthanry/moodle_automation' # Same location of the script
+    
+    def __init__(self, section, vid_catalogue):
+
+        self.num        = section['sectionnum']
+        self.name       = section['name']
+        self.summary    = section['summary']
+        self.new_links  = []
+        self.vid_cat    = vid_catalogue
+        
+        #Populate week start and end based on name
+        dates = re.findall(r'(\d{1,2} \w{3,})',self.name)
+        if len(dates) == 2:
+            self.start  = self.closest_date(dates[0])
+            self.end    = self.closest_date(dates[1])
+            # Retrieve section specific videos from the repository
+            self.get_videos()
+        else:
+            self.start  = None
+            self.end    = None
+        
+        # Retrieve section specific HTML and PDF slides from the repository
+        self.get_presentations()
+
+        # Build the new summary
+        self.make_new_summary()
+
+    def get_videos(self):
+        # Retrieve section specific videos from the repository
+        summary = bs(self.summary, 'html.parser')
+        for video in self.vid_cat:
+            if  (self.start < video['date'] <= self.end) and \
+                (summary.find(href = video['url']) == None):
+                # checks if present in the summary
+                self.new_links.append({
+                    'type'  : 'video',
+                    'title' : video['title'],
+                    'url'  : video['url']
+                })
+                
+    def get_presentations(self):
+        '''
+            This method assumes all course material is present in a folder next to this script.
+            Each week material is to be in a subfolder which name contains the week (= section number)
+        '''
+        summary_soup = bs(self.summary, 'html.parser')
+        for folder , sub_folders , files in os.walk('./'):
+            sub_folders.sort()
+            
+            if re.match('\./[^\.]',folder): # ignore hidden files
+                
+                for sub_fold in sub_folders:
+                    if re.match(f'.*{str(self.num)}.*',sub_fold): # only for this section
+                        for item in os.listdir(folder+'/'+sub_fold): # process files
+                            file_path = folder+'/'+sub_fold+'/'+item
+
+                            #exclude .md files
+                            if re.match('.*[^\.md]$',item):
+                                if item == 'index.html' or re.match(f'wk{str(self.num)}\.pdf',item):
+                                    
+                                    # Attempt to find the class topic
+                                    try:
+                                        f = open(f'{folder}/{sub_fold}/slides.md', encoding = 'utf-8')
+                                        scraped_title = re.match('#{2,3}\s(.*)',f.readlines()[1])
+                                        title = scraped_title.group(1)
+                                    except:
+                                        title = item
+
+                                    # Add the new resource to the list
+                                    url = f'{self.material_repository}/{folder}/{sub_fold}/{item}'
+                                    if (summary_soup.find(href = url) == None):
+                                    # checks if present in the summary
+                                        self.new_links.append({
+                                            'type'  : 'html' if item == 'index.html' else 'pdf',
+                                            'title' : title,
+                                            'url'  : url
+                                        })
+
+                                else:
+                                    # Add the new resource to the list
+                                    url = f'{self.material_repository}/{folder}/wk{str(self.num)}/{item}'
+                                    if (summary_soup.find(href = url) == None):
+                                    # checks if present in the summary
+                                        self.new_links.append({
+                                            'type'  : 'html',
+                                            'title' : item,
+                                            'url'  : url
+                                        })
+        
+    def make_new_summary(self):
+        for resource in self.new_links:
+            soup = bs('<p></p>', 'html.parser')
+            root_tag = soup.p
+
+            # Build the link
+            new_res_link = soup.new_tag("a", href=resource['url'])
+            new_res_link.string = resource['title']
+
+            # Add icon (based on moodle image.php)
+            img = soup.new_tag('img',src=f'/theme/image.php/classic/core/-1/f/{resource["type"]}-24')
+            new_res_link.string.insert_before(img)
+
+            root_tag.append(new_res_link)
+
+            self.summary += str(root_tag) + '\n'
+
+    def closest_date(self, day_month, format = '%d %B'):
+        # Get date object based on day month closest from now
+        '''
+            Assumes and returns a date based on how close it is from now
+
+            Parameters:
+                day: day of the month
+                month: name of the month
+                format: specify the format of the day and month. Default is %d %B (4 January)
+
+            Returns:
+                date: datetime object representing the closest day month
+            
+        '''
+        now = datetime.today()
+        curr_date = datetime.strptime(day_month + ' ' + str(now.year), format + ' %Y')
+        last_date = curr_date - relativedelta(years=1)
+        next_date = curr_date + relativedelta(years=1)
+        
+        return min([curr_date,last_date,next_date], key=lambda x: abs(x - now))
+
+
+
+# Get list of google videos
+def get_gvideos(g_drive_folder, video_url_base = 'https://drive.google.com/file/d/', vid_tag_class = 'Q5txwe'):
+
+    req = requests.get(g_drive_folder)
+    soup = bs(req.text, 'html.parser')
+
+    videos = soup.find_all('div',class_ = vid_tag_class)
+    videos_details = []
+    
+    for video in videos:
+        video_title = video.text
+        video_date = re.search(r'(\d{4}-\d{2}-\d{2})',video_title)
+        video_id = video.parent.parent.parent.parent.attrs['data-id']   
+
+        video_detail = {
+            'id': video_id,
+            'url': video_url_base + video_id,
+            'title': video_title,
+            'date': datetime.strptime(video_date.group(), '%Y-%m-%d')
+        }
+    
+        videos_details.append(video_detail)
+        
+    return videos_details
+
+# Rest-Api functions and classes from https://github.com/corvus-albus
 def rest_api_parameters(in_args, prefix='', out_dict=None):
     """Transform dictionary/array structure to a flat dictionary, with key names
     defining the structure.
@@ -68,200 +221,30 @@ class LocalUpdateSections(object):
     def __init__(self, cid, sectionsdata):
         self.updatesections = call('local_wsmanagesections_update_sections', courseid = cid, sections = sectionsdata)
 
-################################################
-# Helper functions
-################################################
-
-# Get list of google videos
-def get_gvideos(g_drive_folder, video_url_base = 'https://drive.google.com/file/d/', vid_tag_class = 'Q5txwe'):
-
-    req = requests.get(g_drive_folder)
-    soup = bs(req.text, 'html.parser')
-
-    videos = soup.find_all('div',class_ = vid_tag_class)
-    videos_details = []
-    
-    for video in videos:
-        video_title = video.text
-        video_date = re.search(r'(\d{4}-\d{2}-\d{2})',video_title)
-        video_id = video.parent.parent.parent.parent.attrs['data-id']   
-
-        video_detail = {
-            'id': video_id,
-            'url': video_url_base + video_id,
-            'title': video_title,
-            'date': datetime.strptime(video_date.group(), '%Y-%m-%d')
-        }
-    
-        videos_details.append(video_detail)
-        
-    return videos_details
-
-def missing_gvideo(video, section):
-    if video['date'] > section['start'] and video['date'] <= section['end']:
-        #the dates match. Is the video id found in section summary?
-        summary = bs(section['summary'], 'html.parser')
-        if summary.find(string=video['title']):
-            return False
-        else:
-            return True
-    return False
-
-# Get date object based on day month closest from now
-def closest_date(day_month, format = '%d %B'):
-    '''
-        Assumes and returns a date based on how close it is from now
-
-        Parameters:
-            day: day of the month
-            month: name of the month
-            format: specify the format of the day and month. Default is %d %B (4 January)
-
-        Returns:
-            date: datetime object representing the closest day month
-        
-    '''
-    now = datetime.today()
-    curr_date = datetime.strptime(day_month + ' ' + str(now.year), format + ' %Y')
-    last_date = curr_date - relativedelta(years=1)
-    next_date = curr_date + relativedelta(years=1)
-    
-    return min([curr_date,last_date,next_date], key=lambda x: abs(x - now))
 
 
 
 
+################
+# Main program #
+################
+
+# Init the list of updates to perform
+payload = []
+
+#Get video repository
 all_gvideos = get_gvideos(VIDEO_REPOSITORY)
 
-
-
-# Get all sections details as an iterable
-sec = LocalGetSections(courseid)
-all_sections = []
-
-for section in sec.getsections:
-    dates = re.findall(r'(\d{1,2} \w{3,})',section['name'])
+for section in LocalGetSections(COURSEID).getsections:
+    # Create section details as Moodle_section object
+    moodle_section = Moodle_section(section, all_gvideos)
     
-    if len(dates) == 2:
-        start   = closest_date(dates[0])
-        end     = closest_date(dates[1])
-    else:
-        start   = None
-        end     = None
+    # Add the updated summaries to the payload
+    payload.append({
+        'section':  moodle_section.num,
+        'summary':  moodle_section.summary
+    })
 
-    section_details = {
-        'num'   : section['sectionnum'],
-        'start'         : start,
-        'end'           : end,
-        'name'  :section['name'],
-        'summary': section['summary']
-    }
-
-    all_sections.append(section_details)
-
-
-updates = []
-
-for section in all_sections:
-    
-    # Are there google videos for the sections?
-    if section['start'] == None or section['end'] == None:
-        continue
-    else:
-        missing_gvideos = list(filter(lambda gvideo: missing_gvideo(gvideo, section), all_gvideos))
-        
-        # Amend summaries with unpublished videos
-        for missing_video in missing_gvideos:
-            summary = bs(section['summary'], 'html.parser')
-            new_link = summary.new_tag('a', href=missing_video['url'])
-            new_link.string = missing_video['title']
-
-            section['summary'] += '<p>' + str(new_link) + '</p>'
-
-
-        # Add the modified summaries to pending updates
-        updates.append(
-            {
-                'section': section['num'],
-                'summary': section['summary']
-            }
-        )
-        
-# data = [{
-#     'section': 5,
-#     'summary': ''
-# }] 
-# sec = LocalUpdateSections(courseid, data)
-# print(sec.updatesections)
-
-for s in range(26):
-    data = [{
-    'section': s,
-    'summary': ''
-    }] 
-    sec = LocalUpdateSections(courseid, data)
-    print(sec.updatesections)
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-################################################
-# Examples
-################################################
-
-# # Get all sections of the course.
-# sec = LocalGetSections(courseid)
-# # Get sections ids of the course with the given numbers.
-# #sec = LocalGetSections(courseid, [0, 1, 2, 3, 5, 6])
-# # Get sections ids of the course with the given ids.
-# #sec = LocalGetSections(courseid, [], [7186, 7187, 7188, 7189])
-# # Get sections ids of the course with the given numbers and given ids.
-# #sec = LocalGetSections(courseid, [0, 1, 2, 3, 5, 6], [7186, 7187, 7188, 7189])
-# print(sec.getsections)
-
-
-# Update sections. Example for onetopic format.
-# data = [{   'type': 'num', 
-#             'section': 4, 
-#             'name': 'Four§', 
-#             'summary': '<p>section FOUR</p>', 
-#             'summaryformat': 1, 
-#             'visible': 1 , 
-#             'highlight': 0, 
-#             'sectionformatoptions': [{'name': 'level', 'value': '1'}]},\
-#         {   'type': 'num', 
-#             'section': 3, 
-#             'name': '3', 
-#             'summary': '<p>section THREE</p>', 
-#             'summaryformat': 1, 
-#             'visible': 0 , 
-#             'highlight': 0, 
-#             'sectionformatoptions': [{'name': 'level', 'value': '0'}]}
-# ]
-
-# sec = LocalUpdateSections(courseid, data)
-# print(sec.updatesections)
-
-
-# Get sections ids of the course with the given numbers.
-# sec = LocalGetSections(courseid, [0, 1, 2, 3, 5, 6])
-
-
-# Get sections ids of the course with the given ids.
-#sec = LocalGetSections(courseid, [], [7186, 7187, 7188, 7189])
-# Get sections ids of the course with the given numbers and given ids.
-#sec = LocalGetSections(courseid, [0, 1, 2, 3, 5, 6], [7186, 7187, 7188, 7189])
-
+# Submit the update to Moodle
+sec = LocalUpdateSections(COURSEID, payload)
+print(sec.updatesections)
