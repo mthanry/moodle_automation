@@ -17,7 +17,7 @@ VIDEO_REPOSITORY = 'https://drive.google.com/drive/folders/1pFHUrmpLv9gEJsvJYKxM
 
 
 class Moodle_section():
-    material_repository = 'https://github.com/mthanry/moodle_automation' # Same location of the script
+    material_repository = 'https://mthanry.github.io/moodle_automation' # Same location of the script
     
     def __init__(self, section, vid_catalogue):
 
@@ -238,7 +238,7 @@ all_gvideos = get_gvideos(VIDEO_REPOSITORY)
 for section in LocalGetSections(COURSEID).getsections:
     # Create section details as Moodle_section object
     moodle_section = Moodle_section(section, all_gvideos)
-    
+
     # Add the updated summaries to the payload
     payload.append({
         'section':  moodle_section.num,
@@ -248,3 +248,4 @@ for section in LocalGetSections(COURSEID).getsections:
 # Submit the update to Moodle
 sec = LocalUpdateSections(COURSEID, payload)
 print(sec.updatesections)
+
